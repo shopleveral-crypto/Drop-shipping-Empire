@@ -25,6 +25,7 @@ FONTS = {
 GRADES = {
     "base": "eq=contrast=1.06:saturation=1.22:gamma=1.03,colorbalance=rm=0.03:bm=-0.03",
     "dim": "eq=contrast=1.05:saturation=1.10:gamma=1.17:brightness=0.015,colorbalance=rm=-0.01:bm=0.02",
+    "bright": "eq=contrast=1.08:saturation=1.22:gamma=0.93,colorbalance=rm=0.03:bm=-0.03",
 }
 FINISH = "vignette=angle=0.42,unsharp=5:5:0.45,setsar=1,format=yuv420p"
 X264 = ["-c:v", "libx264", "-preset", "fast", "-crf", "12", "-pix_fmt", "yuv420p"]
@@ -35,12 +36,12 @@ def run(cmd):
     subprocess.run(cmd, check=True)
 
 
-def zoom_scale(dur, drift, punch=0.12):
-    # Punch-in at the cut that settles over 0.3s, then a slow push (drift > 0) or pull (drift < 0).
-    ramp = f"t/{dur}" if drift >= 0 else f"(1-t/{dur})"
-    z = f"(1+{abs(drift)}*{ramp}+{punch}*pow(max(0\\,1-t/0.3)\\,2))"
+def zoom_scale(dur, z0, z1, punch=0.12, cx=0.5, cy=0.5):
+    # Punch-in at the cut that settles over 0.3s, then a slow zoom from z0 to z1.
+    # (cx, cy) is the normalized point that stays fixed while zooming.
+    z = f"({z0}+({z1 - z0})*t/{dur}+{punch}*pow(max(0\\,1-t/0.3)\\,2))"
     return (f"scale=w='2*trunc(540*{z})':h='2*trunc(960*{z})':eval=frame:flags=lanczos,"
-            f"crop=1080:1920")
+            f"crop=1080:1920:x='(in_w-1080)*{cx}':y='(in_h-1920)*{cy}'")
 
 
 def build_segments(tl, work):
@@ -50,9 +51,12 @@ def build_segments(tl, work):
         frames = round(s["end"] * fps) - round(s["start"] * fps)
         dur = frames / fps
         speed = (s["out"] - s["in"]) / dur
-        drift = 0.05 if i % 2 == 0 else -0.05
+        # Alternate slow push-in / pull-out unless the shot sets its own zoom.
+        zoom = {"from": 1.0, "to": 1.05} if i % 2 == 0 else {"from": 1.05, "to": 1.0}
+        zoom.update(s.get("zoom", {}))
+        zs = zoom_scale(dur, zoom["from"], zoom["to"], zoom.get("punch", 0.12), zoom.get("cx", 0.5), zoom.get("cy", 0.5))
         vf = (f"setpts=(PTS-STARTPTS)/{speed:.5f},fps={fps},tpad=stop_mode=clone:stop_duration=1,"
-              f"{zoom_scale(dur, drift)},{GRADES[s['grade']]},{FINISH}")
+              f"{zs},{GRADES[s['grade']]},{FINISH}")
         out = os.path.join(work, f"seg{i}.mp4")
         run(["ffmpeg", "-v", "error", "-y", "-ss", str(s["in"]), "-i", os.path.join(SRC, s["src"]),
              "-vf", vf, "-frames:v", str(frames), "-an", *X264, out])
@@ -66,7 +70,7 @@ def build_segments(tl, work):
          "-frames:v", "1", still])
     out = os.path.join(work, "seg_end.mp4")
     run(["ffmpeg", "-v", "error", "-y", "-loop", "1", "-framerate", str(fps), "-i", still,
-         "-vf", f"{zoom_scale(dur, 0.04, punch=0.05)},{GRADES['base']},{FINISH}",
+         "-vf", f"{zoom_scale(dur, 1.0, 1.04, punch=0.05)},{GRADES['base']},{FINISH}",
          "-frames:v", str(frames), *X264, out])
     paths.append(out)
 
