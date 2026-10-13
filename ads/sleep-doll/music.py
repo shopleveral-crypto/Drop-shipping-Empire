@@ -4,7 +4,7 @@ Warm ukulele-pop at 96 BPM (plucked strings via Karplus-Strong, glockenspiel,
 soft kick, snaps, shaker). The arrangement is 7 bars plus a final resolved
 chord, so cuts in the edit land on the beat grid.
 
-Usage: python3 music.py <timeline.json> <out_music.wav> <out_sfx.wav>
+Usage: python3 -I music.py <timeline.json> <out_music.wav> <out_sfx.wav>
 """
 import json
 import sys
@@ -193,6 +193,17 @@ def ding():
     return y * np.minimum(1, t / 0.003) / 1.6
 
 
+def pat_thump():
+    """Soft muffled tap, like a palm patting a back."""
+    t = np.arange(int(0.16 * SR)) / SR
+    f = 95 + 80 * np.exp(-t * 40)
+    body = np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t * 28)
+    sos = butter(2, 900, fs=SR, output="sos")
+    cloth = sosfilt(sos, rng.uniform(-1, 1, len(t))) * np.exp(-t * 60)
+    y = body + 0.6 * cloth / (np.max(np.abs(cloth)) + 1e-9)
+    return y * np.minimum(1, t / 0.002) / 1.4
+
+
 def build_sfx(tl, total):
     trk = Track(total)
     for c in tl["cuts"]:
@@ -200,6 +211,8 @@ def build_sfx(tl, total):
     for t in tl["sfx_pops"]:
         trk.add(pop(), t, 0.22)
     trk.add(ding(), tl["sfx_ding"], 0.28)
+    for t in tl.get("sfx_pats", []):
+        trk.add(pat_thump(), t, 0.55)
     mono = trk.buf[: int(total * SR)]
     return np.stack([mono, mono], axis=1)
 

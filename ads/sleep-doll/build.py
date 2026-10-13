@@ -2,7 +2,8 @@
 
 Pipeline: trim/speed/zoom/grade each shot -> end card -> concat -> overlay
 motion graphics (rendered by Chromium) -> original music + SFX -> export
-9:16 (Reels/TikTok/Stories) and 4:5 (Feed) for every hook variant.
+the versions listed under "exports" in timeline.json (9:16 or 4:5,
+with the full mix or SFX only).
 
 Usage: python3 build.py --work <scratch dir> [--fonts <dir>]
 """
@@ -125,7 +126,6 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--work", required=True)
     ap.add_argument("--fonts")
-    ap.add_argument("--hooks", default="A,B")
     args = ap.parse_args()
     os.makedirs(args.work, exist_ok=True)
     os.makedirs(OUT, exist_ok=True)
@@ -138,14 +138,14 @@ def main():
     tl = json.load(open(os.path.join(HERE, "timeline.json"), encoding="utf-8"))
     base = build_segments(tl, args.work)
     mixes = build_audio(tl, args.work)
-    crop45 = f"{tl['width']}:1350:0:{(tl['height'] - 1350) // 2}"
-    for hook in args.hooks.split(","):
-        ovl = render_overlay(hook, args.work, fonts)
-        name = f"baby-hug-duck_hook-{hook}"
-        compose(base, ovl, mixes["full"], os.path.join(OUT, f"{name}_9x16.mp4"), tl["fps"])
-        compose(base, ovl, mixes["full"], os.path.join(OUT, f"{name}_4x5.mp4"), tl["fps"], crop=crop45)
-        if hook == "A":
-            compose(base, ovl, mixes["sfx"], os.path.join(OUT, f"{name}_9x16_no-music.mp4"), tl["fps"])
+    overlays = {}
+    for ex in tl["exports"]:
+        if ex["hook"] not in overlays:
+            overlays[ex["hook"]] = render_overlay(ex["hook"], args.work, fonts)
+        crop = None
+        if ex.get("aspect") == "4x5":
+            crop = f"{tl['width']}:1350:0:{(tl['height'] - 1350) // 2}"
+        compose(base, overlays[ex["hook"]], mixes[ex["audio"]], os.path.join(OUT, ex["name"] + ".mp4"), tl["fps"], crop)
     print("done ->", OUT)
 
 

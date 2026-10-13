@@ -65,6 +65,18 @@
     border-radius: 22px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
   }
+  .pat { position: relative; width: 240px; height: 215px; }
+  .pat .hand {
+    position: absolute; left: 50%; top: 58px;
+    font-size: 104px; line-height: 1;
+    filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.35));
+  }
+  .pat .ripple {
+    position: absolute; left: 50%; bottom: 6px;
+    width: 180px; height: 44px; margin-left: -90px;
+    border: 7px solid var(--yellow); border-radius: 50%;
+    opacity: 0;
+  }
   #flash { position: absolute; inset: 0; background: #fff; opacity: 0; }
   #shade {
     position: absolute; inset: 0; opacity: 0;
@@ -88,7 +100,7 @@
     text-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
   }
   .chips {
-    display: flex; flex-wrap: wrap; justify-content: center;
+    display: grid; grid-template-columns: auto auto; justify-content: center;
     gap: 12px; max-width: 1040px; margin: 0 auto;
   }
   .chip {
@@ -96,8 +108,9 @@
     color: var(--ink);
     font-family: 'Heebo', 'Rubik', 'Noto Color Emoji', sans-serif;
     font-weight: 700;
-    font-size: 35px;
-    padding: 9px 20px 12px;
+    font-size: 37px;
+    padding: 9px 22px 12px;
+    text-align: center;
     border-radius: 999px;
     white-space: nowrap;
     opacity: 0;
@@ -159,6 +172,12 @@
         g.appendChild(s);
         spec.subEl = s;
       }
+      if (spec.patIcon) {
+        // A palm that keeps patting, so "pats by itself" reads without sound.
+        const pat = el('div', 'pat', '<span class="hand">🫳</span><div class="ripple"></div>');
+        g.appendChild(pat);
+        spec.patEl = pat;
+      }
       stage.appendChild(g);
       items.push({ spec, g });
     }
@@ -173,7 +192,7 @@
     endItems.push({ node: head, at: ec.start, kind: 'pop' });
 
     const chips = el('div', 'abs chips');
-    chips.style.top = '1005px';
+    chips.style.top = '975px';
     ec.chips.forEach((txt, i) => {
       const c = el('div', 'chip', txt);
       chips.appendChild(c);
@@ -182,13 +201,13 @@
     stage.appendChild(chips);
 
     const cta = el('div', 'abs center');
-    cta.style.top = '1125px';
+    cta.style.top = '1160px';
     cta.appendChild(el('div', 'cta', ec.cta));
     stage.appendChild(cta);
     endItems.push({ node: cta, at: ec.ctaAt, kind: 'pulse' });
 
     const g2 = el('div', 'abs center');
-    g2.style.top = '1300px';
+    g2.style.top = '1330px';
     g2.appendChild(el('div', 'guarantee', ec.guarantee));
     stage.appendChild(g2);
     endItems.push({ node: g2, at: ec.guaranteeAt, kind: 'slide' });
@@ -226,6 +245,19 @@
         const p = clamp(l / 0.25);
         spec.subEl.style.opacity = clamp(l / 0.12);
         spec.subEl.style.transform = `translateY(${(1 - easeOutCubic(p)) * 26}px)`;
+        if (spec.patEl) spec.patEl.style.opacity = clamp(l / 0.12);
+      }
+      if (spec.patEl) {
+        const hits = TL.sfx_pats, P = hits[1] - hits[0];
+        const since = (((t - hits[0]) % P) + P) % P;
+        const lift = Math.sin(Math.PI * since / P);
+        const hand = spec.patEl.querySelector('.hand');
+        const squash = 1 - 0.1 * Math.max(0, 1 - since / 0.08);
+        hand.style.transform = `translateX(-50%) translateY(${-46 * lift}px) scaleY(${squash}) rotate(${-8 * lift}deg)`;
+        const r = spec.patEl.querySelector('.ripple');
+        const q = clamp(since / 0.38);
+        r.style.opacity = t >= hits[0] ? 0.95 * (1 - q) : 0;
+        r.style.transform = `scale(${0.45 + 1.1 * easeOutCubic(q)})`;
       }
     }
     // Flash on cuts.
