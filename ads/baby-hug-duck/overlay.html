@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>Ad overlay</title>
+<style>
+  :root {
+    --yellow: #FFD43B;
+    --ink: #1E1B16;
+    --box: rgba(24, 20, 14, 0.86);
+  }
+  html, body {
+    margin: 0;
+    width: 1080px;
+    height: 1920px;
+    overflow: hidden;
+    background: transparent;
+  }
+  body {
+    font-family: 'Rubik', 'Noto Color Emoji', sans-serif;
+    direction: rtl;
+    -webkit-font-smoothing: antialiased;
+  }
+  .abs { position: absolute; left: 0; right: 0; }
+  .group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    opacity: 0;
+    will-change: transform, opacity;
+  }
+  .box {
+    background: var(--box);
+    color: #fff;
+    font-weight: 800;
+    font-size: 78px;
+    line-height: 1.14;
+    letter-spacing: -0.5px;
+    padding: 20px 40px 26px;
+    border-radius: 30px;
+    text-align: center;
+    max-width: 900px;
+    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.28);
+  }
+  .box.accent { background: var(--yellow); color: var(--ink); }
+  .box.accent y { color: var(--ink); }
+  y { color: var(--yellow); }
+  .pill {
+    background: var(--yellow);
+    color: var(--ink);
+    font-weight: 800;
+    font-size: 46px;
+    padding: 10px 32px 14px;
+    border-radius: 999px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+  }
+  .sub {
+    background: rgba(255, 255, 255, 0.94);
+    color: var(--ink);
+    font-family: 'Heebo', 'Rubik', 'Noto Color Emoji', sans-serif;
+    font-weight: 700;
+    font-size: 48px;
+    padding: 10px 30px 14px;
+    border-radius: 22px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  }
+  #flash { position: absolute; inset: 0; background: #fff; opacity: 0; }
+  #shade {
+    position: absolute; inset: 0; opacity: 0;
+    background: linear-gradient(to bottom,
+      rgba(20, 16, 10, 0.4) 0%, rgba(20, 16, 10, 0.0) 26%,
+      rgba(20, 16, 10, 0.0) 34%, rgba(20, 16, 10, 0.55) 62%, rgba(20, 16, 10, 0.78) 100%);
+  }
+  .title {
+    color: #fff;
+    font-weight: 900;
+    font-size: 112px;
+    line-height: 1.05;
+    text-align: center;
+    text-shadow: 0 6px 28px rgba(0, 0, 0, 0.45);
+  }
+  .subtitle {
+    color: var(--yellow);
+    font-weight: 700;
+    font-size: 56px;
+    text-align: center;
+    text-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
+  }
+  .chips {
+    display: flex; flex-wrap: wrap; justify-content: center;
+    gap: 12px; max-width: 1040px; margin: 0 auto;
+  }
+  .chip {
+    background: rgba(255, 255, 255, 0.95);
+    color: var(--ink);
+    font-family: 'Heebo', 'Rubik', 'Noto Color Emoji', sans-serif;
+    font-weight: 700;
+    font-size: 35px;
+    padding: 9px 20px 12px;
+    border-radius: 999px;
+    white-space: nowrap;
+    opacity: 0;
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.25);
+  }
+  .cta {
+    background: var(--yellow);
+    color: var(--ink);
+    font-weight: 900;
+    font-size: 76px;
+    padding: 22px 76px 30px;
+    border-radius: 999px;
+    box-shadow: 0 0 0 10px rgba(255, 212, 59, 0.28), 0 18px 44px rgba(0, 0, 0, 0.35);
+  }
+  .guarantee {
+    color: #fff;
+    background: rgba(24, 20, 14, 0.7);
+    font-family: 'Heebo', 'Rubik', 'Noto Color Emoji', sans-serif;
+    font-weight: 700;
+    font-size: 44px;
+    padding: 10px 30px 14px;
+    border-radius: 999px;
+  }
+  .center { display: flex; justify-content: center; opacity: 0; }
+</style>
+</head>
+<body>
+<div id="shade"></div>
+<div id="stage"></div>
+<div id="flash"></div>
+<script>
+  const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+  const easeOutBack = (p) => { const c1 = 1.9, c3 = c1 + 1; return 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2); };
+  const easeOutCubic = (p) => 1 - Math.pow(1 - p, 3);
+  const ENTER = 0.32, EXIT = 0.14;
+
+  let TL = null, items = [], endItems = [];
+
+  function el(tag, cls, html) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (html !== undefined) e.innerHTML = html;
+    return e;
+  }
+
+  window.setTimeline = (tl, hookKey) => {
+    TL = tl;
+    const stage = document.getElementById('stage');
+    stage.innerHTML = '';
+    items = [];
+    for (const c of tl.captions) {
+      const spec = c.id === 'hook' ? { ...c, ...tl.hooks[hookKey] } : c;
+      const g = el('div', 'abs group');
+      g.style.top = spec.top + 'px';
+      if (spec.pill) g.appendChild(el('div', 'pill', spec.pill));
+      g.appendChild(el('div', 'box' + (spec.style === 'accent' ? ' accent' : ''), spec.main));
+      if (spec.sub) {
+        const s = el('div', 'sub', spec.sub);
+        g.appendChild(s);
+        spec.subEl = s;
+      }
+      stage.appendChild(g);
+      items.push({ spec, g });
+    }
+    // End card.
+    const ec = tl.endcardOverlay;
+    endItems = [];
+    const head = el('div', 'abs group');
+    head.style.top = '660px';
+    head.appendChild(el('div', 'title', ec.title));
+    head.appendChild(el('div', 'subtitle', ec.subtitle));
+    stage.appendChild(head);
+    endItems.push({ node: head, at: ec.start, kind: 'pop' });
+
+    const chips = el('div', 'abs chips');
+    chips.style.top = '1005px';
+    ec.chips.forEach((txt, i) => {
+      const c = el('div', 'chip', txt);
+      chips.appendChild(c);
+      endItems.push({ node: c, at: ec.chipsAt + i * ec.chipStagger, kind: 'slide' });
+    });
+    stage.appendChild(chips);
+
+    const cta = el('div', 'abs center');
+    cta.style.top = '1125px';
+    cta.appendChild(el('div', 'cta', ec.cta));
+    stage.appendChild(cta);
+    endItems.push({ node: cta, at: ec.ctaAt, kind: 'pulse' });
+
+    const g2 = el('div', 'abs center');
+    g2.style.top = '1300px';
+    g2.appendChild(el('div', 'guarantee', ec.guarantee));
+    stage.appendChild(g2);
+    endItems.push({ node: g2, at: ec.guaranteeAt, kind: 'slide' });
+  };
+
+  function popStyle(node, local, out, noEnter) {
+    if (local < 0 || (out !== null && local > out + EXIT)) { node.style.opacity = 0; return; }
+    let s, o, ty = 0;
+    if (noEnter) {
+      const p = clamp(local / 0.35);
+      s = 0.94 + 0.06 * easeOutBack(p);
+      o = 1;
+    } else {
+      const p = clamp(local / ENTER);
+      s = 0.55 + 0.45 * easeOutBack(p);
+      o = clamp(local / 0.1);
+    }
+    if (out !== null && local > out) {
+      const q = clamp((local - out) / EXIT);
+      o *= 1 - q;
+      s *= 1 - 0.06 * q;
+      ty = -14 * q;
+    }
+    node.style.opacity = o;
+    node.style.transform = `translateY(${ty}px) scale(${s})`;
+  }
+
+  window.renderAt = (t) => {
+    for (const { spec, g } of items) {
+      const dur = spec.end - spec.start;
+      popStyle(g, t - spec.start, dur - EXIT, !!spec.noEnter);
+      if (spec.subEl) {
+        // Sub-line lands a beat after the main line.
+        const l = t - spec.start - 0.35;
+        const p = clamp(l / 0.25);
+        spec.subEl.style.opacity = clamp(l / 0.12);
+        spec.subEl.style.transform = `translateY(${(1 - easeOutCubic(p)) * 26}px)`;
+      }
+    }
+    // Flash on cuts.
+    let f = 0;
+    for (const c of TL.cuts) if (t >= c) f = Math.max(f, 0.32 * (1 - clamp((t - c) / 0.12)));
+    document.getElementById('flash').style.opacity = f;
+    // Shade behind the closing captions and end card.
+    document.getElementById('shade').style.opacity = clamp((t - TL.endcard.start) / 0.4);
+    for (const it of endItems) {
+      const local = t - it.at;
+      if (it.kind === 'pop') popStyle(it.node, local, null, false);
+      else if (it.kind === 'slide') {
+        const p = clamp(local / 0.3);
+        it.node.style.opacity = clamp(local / 0.12);
+        it.node.style.transform = `translateY(${(1 - easeOutBack(p)) * 40}px)`;
+      } else if (it.kind === 'pulse') {
+        if (local < 0) { it.node.style.opacity = 0; continue; }
+        const p = clamp(local / ENTER);
+        const pulse = local > ENTER ? 1 + 0.045 * Math.sin((local - ENTER) * Math.PI * 2 * 1.6) : 1;
+        it.node.style.opacity = clamp(local / 0.1);
+        it.node.style.transform = `scale(${(0.55 + 0.45 * easeOutBack(p)) * pulse})`;
+      }
+    }
+  };
+</script>
+</body>
+</html>
