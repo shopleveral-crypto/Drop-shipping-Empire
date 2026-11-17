@@ -1,0 +1,74 @@
+//@version=6
+// Opening Range 15m -> 5m confirmation -> 1m retest entry (Jdub Trades method)
+// Run on a 1-minute chart. Session times are New York time.
+strategy("ORB 15-5-1", overlay=true, initial_capital=10000, commission_type=strategy.commission.percent, commission_value=0.05, process_orders_on_close=true, pyramiding=0)
+
+rr        = input.float(2.0, "Reward:Risk")
+riskPct   = input.float(1.0, "Risk % of equity per trade")
+lastEntry = input.int(1130, "Last entry time (HHMM, NY)")
+flatTime  = input.int(1600, "Flat time (HHMM, NY)")
+tz = "America/New_York"
+
+h  = hour(time, tz)
+m  = minute(time, tz)
+hm = h * 100 + m
+newDay = ta.change(dayofmonth(time, tz)) != 0
+
+var float orH = na
+var float orL = na
+var int   dir = 0          // 1 long armed, -1 short armed, 0 none
+var bool  done = false     // one setup/trade per day
+var float pbExt = na       // pullback extreme since arming (for stop)
+var int   armBar = na
+
+if newDay
+    orH := na, orL := na, dir := 0, done := false, pbExt := na
+
+// 1) Opening range = first 15m candle 09:30-09:45
+if hm >= 930 and hm < 945
+    orH := na(orH) ? high : math.max(orH, high)
+    orL := na(orL) ? low  : math.min(orL, low)
+
+// 5m close happens on the 1m bar whose minute is 4 or 9 (bar closes on :x5/:x0)
+is5mClose = (m % 5) == 4
+
+// 2) Wait for a 5m candle close outside the range
+if hm >= 945 and hm < lastEntry and dir == 0 and not done and not na(orH) and is5mClose
+    if close > orH
+        dir := 1, pbExt := low, armBar := bar_index
+    else if close < orL
+        dir := -1, pbExt := high, armBar := bar_index
+
+// 3) 1m retest of the level + rejection
+if dir != 0 and not done and strategy.position_size == 0 and bar_index > armBar
+    pbExt := dir == 1 ? math.min(pbExt, low) : math.max(pbExt, high)
+    if hm >= lastEntry
+        done := true
+    else if dir == 1
+        if close < orH                      // closed back inside -> no trade today
+            done := true
+        else if low <= orH                  // touched the level and held above
+            stop = pbExt - syminfo.mintick
+            risk = close - stop
+            if risk > 0
+                qty = strategy.equity * riskPct / 100 / risk
+                strategy.entry("L", strategy.long, qty=qty)
+                strategy.exit("Lx", "L", stop=stop, limit=close + rr * risk)
+            done := true
+    else
+        if close > orL
+            done := true
+        else if high >= orL
+            stop = pbExt + syminfo.mintick
+            risk = stop - close
+            if risk > 0
+                qty = strategy.equity * riskPct / 100 / risk
+                strategy.entry("S", strategy.short, qty=qty)
+                strategy.exit("Sx", "S", stop=stop, limit=close - rr * risk)
+            done := true
+
+if hm >= flatTime and strategy.position_size != 0
+    strategy.close_all("EOD")
+
+plot(orH, "OR High", color.green, style=plot.style_linebr)
+plot(orL, "OR Low",  color.red,   style=plot.style_linebr)
